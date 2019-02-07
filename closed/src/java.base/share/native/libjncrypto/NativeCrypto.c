@@ -39,7 +39,7 @@
 typedef struct OpenSSLMDContext {
     EVP_MD_CTX *ctx;
     const EVP_MD *digestAlg;
-    unsigned char* nativeBuffer;
+    //unsigned char* nativeBuffer;
 } OpenSSLMDContext;
 
 /* Structure for OpenSSL Cipher context */
@@ -50,7 +50,7 @@ typedef struct OpenSSLCipherContext {
 } OpenSSLCipherContext;
 
 /* Handle errors from OpenSSL calls */
-static void handleErrors(void) {
+static void printErrors(void) {
     unsigned long errCode;
 
     printf("An error occurred\n");
@@ -61,7 +61,6 @@ static void handleErrors(void) {
         printf("Generating error message\n" );
         printf("%s\n", err);
     }
-    abort();
 }
 
 /* Create Digest context
@@ -97,19 +96,29 @@ JNIEXPORT jlong JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_DigestCreateCon
             assert(0);
     }
 
-    if((ctx = EVP_MD_CTX_new()) == NULL)
-        handleErrors();
+    if ((ctx = EVP_MD_CTX_new()) == NULL)
+        printErrors();
 
-    if(1 != EVP_DigestInit_ex(ctx, digestAlg, NULL))
-        handleErrors();
+    if (1 != EVP_DigestInit_ex(ctx, digestAlg, NULL)) {
+        printErrors();
+        return -1;
+    }
 
     context = malloc(sizeof(OpenSSLMDContext));
+    if (context == NULL)
+        return -1;
     context->ctx = ctx;
     context->digestAlg = digestAlg;
 
     if (copyContext != 0) {
         EVP_MD_CTX *contextToCopy = ((OpenSSLMDContext*) copyContext)->ctx;
-        EVP_MD_CTX_copy_ex(ctx, contextToCopy);
+        if (contextToCopy == NULL) {
+            return -1;
+        }
+        if (0 == EVP_MD_CTX_copy_ex(ctx, contextToCopy)) {
+            printErrors();
+            return -1;
+        }
     }
 
     return (jlong)(intptr_t)context;
@@ -145,18 +154,25 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_DigestUpdate
 
     OpenSSLMDContext *context = (OpenSSLMDContext*) c;
 
+    if (context == NULL)
+        return -1;
+
     if (message == NULL) {
         // Data passed in through direct byte buffer
-        if (1 != EVP_DigestUpdate(context->ctx, context->nativeBuffer, messageLen))
-            handleErrors();
+        return -1;
+        //if (1 != EVP_DigestUpdate(context->ctx, context->nativeBuffer, messageLen))
+        //    printErrors();
     } else {
         unsigned char* messageNative = (*env)->GetPrimitiveArrayCritical(env, message, 0);
         if (messageNative == NULL) {
             return -1;
         }
 
-        if (1 != EVP_DigestUpdate(context->ctx, (messageNative + messageOffset), messageLen))
-            handleErrors();
+        if (1 != EVP_DigestUpdate(context->ctx, (messageNative + messageOffset), messageLen)){
+            printErrors();
+            (*env)->ReleasePrimitiveArrayCritical(env, message, messageNative, 0);
+            return -1;
+        }
 
         (*env)->ReleasePrimitiveArrayCritical(env, message, messageNative, 0);
     }
@@ -176,6 +192,9 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_DigestComputeAnd
 
     OpenSSLMDContext *context = (OpenSSLMDContext*) c;
 
+    if (context == NULL)
+        return -1;
+
     unsigned int size;
     unsigned char* messageNative;
     unsigned char* digestNative;
@@ -187,7 +206,7 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_DigestComputeAnd
         }
 
         if (1 != EVP_DigestUpdate(context->ctx, (messageNative + messageOffset), messageLen))
-            handleErrors();
+            printErrors();
         (*env)->ReleasePrimitiveArrayCritical(env, message, messageNative, 0);
     }
 
@@ -197,14 +216,14 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_DigestComputeAnd
     }
 
     if (1 != EVP_DigestFinal_ex(context->ctx, (digestNative + digestOffset), &size))
-        handleErrors();
+        printErrors();
 
     (*env)->ReleasePrimitiveArrayCritical(env, digest, digestNative, 0);
 
     EVP_MD_CTX_reset(context->ctx);
 
     if (1 != EVP_DigestInit_ex(context->ctx, context->digestAlg, NULL))
-        handleErrors();
+        printErrors();
 
     return (jint)size;
 }
@@ -220,10 +239,13 @@ JNIEXPORT void JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_DigestReset
 
     OpenSSLMDContext *context = (OpenSSLMDContext*) c;
 
+    if (context == NULL)
+        return;
+
     EVP_MD_CTX_reset(context->ctx);
 
     if (1 != EVP_DigestInit_ex(context->ctx, context->digestAlg, NULL))
-        handleErrors();
+        printErrors();
 }
 
 /* Create Cipher context
@@ -243,7 +265,7 @@ JNIEXPORT jlong JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_CBCCreateContex
 
     /* Create and initialise the context */
     if (!(ctx = EVP_CIPHER_CTX_new()))
-        handleErrors();
+        printErrors();
 
     context = malloc(sizeof(OpenSSLCipherContext));
     context->nativeBuffer = (unsigned char*)nativeBuffer;
@@ -309,7 +331,7 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_CBCInit
     }
 
     if (1 != EVP_CipherInit_ex(ctx, evp_cipher1, NULL, keyNative, ivNative, mode))
-        handleErrors();
+        printErrors();
 
     EVP_CIPHER_CTX_set_padding(ctx, 0);
 
@@ -345,7 +367,7 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_CBCUpdate
     }
 
     if(1 != EVP_CipherUpdate(ctx, (outputNative + outputOffset), &outputLen, (inputNative + inputOffset), inputLen))
-        handleErrors();
+        printErrors();
 
     (*env)->ReleasePrimitiveArrayCritical(env, input, inputNative, 0);
     (*env)->ReleasePrimitiveArrayCritical(env, output, outputNative, 0);
@@ -384,10 +406,10 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_CBCFinalEncrypt
     }
 
     if (1 != EVP_CipherUpdate(ctx, (outputNative + outputOffset), &outputLen, (inputNative + inputOffset), inputLen))
-        handleErrors();
+        printErrors();
 
     if (1 != EVP_CipherFinal_ex(ctx, buf, &outputLen1))
-        handleErrors();
+        printErrors();
 
     (*env)->ReleasePrimitiveArrayCritical(env, input, inputNative, 0);
     (*env)->ReleasePrimitiveArrayCritical(env, output, outputNative, 0);
@@ -477,32 +499,32 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_GCMEncrypt
 
     ctx = EVP_CIPHER_CTX_new();
     if(1 != EVP_CipherInit_ex(ctx, evp_gcm_cipher, NULL, NULL, NULL, 1 )) /* 1 - Encrypt mode 0 Decrypt Mode*/
-        handleErrors();
+        printErrors();
 
     if(1 != EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, ivLen, NULL))
-        handleErrors();
+        printErrors();
 
     if(1 != EVP_CipherInit_ex(ctx, NULL, NULL, keyNative, ivNative, -1))
-        handleErrors();
+        printErrors();
 
     /* provide AAD */
     if(1 != EVP_CipherUpdate(ctx, NULL, &len, aadNative, aadLen))
-        handleErrors();
+        printErrors();
 
     /* encrypt plaintext and obtain ciphertext */
     if (inLen > 0) {
         if(1 != EVP_CipherUpdate(ctx, outputNative + outOffset, &len, inputNative + inOffset, inLen))
-            handleErrors();
+            printErrors();
         len_cipher = len;
     }
 
     /* finalize the encryption */
     if(1 != EVP_CipherFinal_ex(ctx, outputNative + outOffset + len_cipher, &len))
-        handleErrors();
+        printErrors();
 
     /* Get the tag, place it at the end of the cipherText buffer */
     if(1 != EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, tagLen, outputNative + outOffset + len + len_cipher))
-        handleErrors();
+        printErrors();
 
     EVP_CIPHER_CTX_free(ctx);
 
@@ -601,30 +623,30 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_GCMDecrypt
     ctx = EVP_CIPHER_CTX_new();
 
     if(1 != EVP_CipherInit_ex(ctx, evp_gcm_cipher, NULL, NULL, NULL, 0 )) /* 1 - Encrypt mode 0 Decrypt Mode*/
-        handleErrors();
+        printErrors();
 
     if(1 != EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, ivLen, NULL))
-        handleErrors();
+        printErrors();
 
     /* Initialise key and IV */
     if(!EVP_DecryptInit_ex(ctx, NULL, NULL, keyNative, ivNative))
-        handleErrors();
+        printErrors();
 
     /* Provide any AAD data */
     if (aadLen > 0) {
         if (!EVP_DecryptUpdate(ctx, NULL, &len, aadNative, aadLen))
-            handleErrors();
+            printErrors();
     }
 
     if (inLen - tagLen > 0) {
         if(!EVP_DecryptUpdate(ctx, outputNative + outOffset, &len, inputNative + inOffset, inLen - tagLen))
-            handleErrors();
+            printErrors();
 
         plaintext_len = len;
     }
 
     if(!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, tagLen, inputNative + inOffset + inLen - tagLen))
-        handleErrors();
+        printErrors();
 
     ret = EVP_DecryptFinal(ctx, outputNative + outOffset + len, &len);
 

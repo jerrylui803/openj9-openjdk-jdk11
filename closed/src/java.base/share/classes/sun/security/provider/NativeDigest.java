@@ -70,6 +70,10 @@ abstract class NativeDigest extends MessageDigestSpi implements Cloneable {
         this.digestLength = digestLength;
         this.algIndx = algIndx;
         this.context = nativeCrypto.DigestCreateContext(0, algIndx);
+        if (this.context == -1) {
+            throw new ProviderException("Error in Native Digest");
+        }
+
     }
 
     // return digest length. See JCA doc.
@@ -100,7 +104,11 @@ abstract class NativeDigest extends MessageDigestSpi implements Cloneable {
 
         bytesProcessed += len;
 
-        nativeCrypto.DigestUpdate(context, b, ofs, len);
+        int ret = nativeCrypto.DigestUpdate(context, b, ofs, len);
+
+        if (ret == -1) {
+            throw new ProviderException("Error in Native Digest");
+        }
     }
 
     // reset this object. See JCA doc.
@@ -141,7 +149,11 @@ abstract class NativeDigest extends MessageDigestSpi implements Cloneable {
             throw new DigestException("Buffer too short to store digest");
         }
 
-        nativeCrypto.DigestComputeAndReset(context, null, 0, 0, out, ofs, len);
+        int ret = nativeCrypto.DigestComputeAndReset(context, null, 0, 0, out, ofs, len);
+
+        if (ret == -1) {
+            throw new ProviderException("Error in Native Digest");
+        }
 
         bytesProcessed = 0;
         return digestLength;
@@ -150,6 +162,9 @@ abstract class NativeDigest extends MessageDigestSpi implements Cloneable {
     public Object clone() throws CloneNotSupportedException {
         NativeDigest copy = (NativeDigest) super.clone();
         copy.context    = nativeCrypto.DigestCreateContext(context, algIndx);
+        if (copy.context == -1) {
+            throw new ProviderException("Error in Native Digest");
+        }
         return copy;
     }
 
