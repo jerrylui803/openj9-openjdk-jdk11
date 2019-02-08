@@ -104,6 +104,10 @@ abstract class NativeDigest extends MessageDigestSpi implements Cloneable {
 
         bytesProcessed += len;
 
+        if (b.length == 0) {
+            return;
+        }
+
         int ret = nativeCrypto.DigestUpdate(context, b, ofs, len);
 
         if (ret == -1) {

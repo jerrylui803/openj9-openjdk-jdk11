@@ -31,7 +31,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
 
 #include "jdk_crypto_jniprovider_NativeCrypto.h"
 
@@ -93,11 +92,13 @@ JNIEXPORT jlong JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_DigestCreateCon
             digestAlg = EVP_sha512();
             break;
         default:
-            assert(0);
+            return -1;
     }
 
-    if ((ctx = EVP_MD_CTX_new()) == NULL)
+    if ((ctx = EVP_MD_CTX_new()) == NULL) {
         printErrors();
+        return -1;
+    }
 
     if (1 != EVP_DigestInit_ex(ctx, digestAlg, NULL)) {
         printErrors();
@@ -133,7 +134,7 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_DigestDestroyCon
   (JNIEnv *env, jclass thisObj, jlong c) {
 
     OpenSSLMDContext *context = (OpenSSLMDContext*) c;
-    if (context == NULL) {
+    if (context == NULL || context->ctx == NULL) {
         return -1;
     }
 
@@ -158,24 +159,21 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_DigestUpdate
         return -1;
 
     if (message == NULL) {
-        // Data passed in through direct byte buffer
         return -1;
-        //if (1 != EVP_DigestUpdate(context->ctx, context->nativeBuffer, messageLen))
-        //    printErrors();
-    } else {
-        unsigned char* messageNative = (*env)->GetPrimitiveArrayCritical(env, message, 0);
-        if (messageNative == NULL) {
-            return -1;
-        }
+    } 
 
-        if (1 != EVP_DigestUpdate(context->ctx, (messageNative + messageOffset), messageLen)){
-            printErrors();
-            (*env)->ReleasePrimitiveArrayCritical(env, message, messageNative, 0);
-            return -1;
-        }
-
-        (*env)->ReleasePrimitiveArrayCritical(env, message, messageNative, 0);
+    unsigned char* messageNative = (*env)->GetPrimitiveArrayCritical(env, message, 0);
+    if (messageNative == NULL) {
+        return -1;
     }
+
+    if (1 != EVP_DigestUpdate(context->ctx, (messageNative + messageOffset), messageLen)){
+        printErrors();
+        (*env)->ReleasePrimitiveArrayCritical(env, message, messageNative, 0);
+        return -1;
+    }
+
+    (*env)->ReleasePrimitiveArrayCritical(env, message, messageNative, 0);
 
     return 0;
 }
@@ -205,8 +203,12 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_DigestComputeAnd
             return -1;
         }
 
-        if (1 != EVP_DigestUpdate(context->ctx, (messageNative + messageOffset), messageLen))
+        if (1 != EVP_DigestUpdate(context->ctx, (messageNative + messageOffset), messageLen)) {
             printErrors();
+            (*env)->ReleasePrimitiveArrayCritical(env, message, messageNative, 0);
+            return -1;
+        }
+
         (*env)->ReleasePrimitiveArrayCritical(env, message, messageNative, 0);
     }
 
@@ -215,15 +217,20 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_DigestComputeAnd
         return -1;
     }
 
-    if (1 != EVP_DigestFinal_ex(context->ctx, (digestNative + digestOffset), &size))
+    if (1 != EVP_DigestFinal_ex(context->ctx, (digestNative + digestOffset), &size)) {
         printErrors();
+        (*env)->ReleasePrimitiveArrayCritical(env, digest, digestNative, 0);
+        return -1;
+    }
 
     (*env)->ReleasePrimitiveArrayCritical(env, digest, digestNative, 0);
 
     EVP_MD_CTX_reset(context->ctx);
 
-    if (1 != EVP_DigestInit_ex(context->ctx, context->digestAlg, NULL))
+    if (1 != EVP_DigestInit_ex(context->ctx, context->digestAlg, NULL)) {
         printErrors();
+        return -1;
+    }
 
     return (jint)size;
 }
