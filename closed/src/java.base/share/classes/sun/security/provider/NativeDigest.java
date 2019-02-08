@@ -93,7 +93,7 @@ abstract class NativeDigest extends MessageDigestSpi implements Cloneable {
     }
 
     // array update. See JCA doc.
-    protected final void engineUpdate(byte[] b, int ofs, int len) {
+    synchronized protected final void engineUpdate(byte[] b, int ofs, int len) {
         if (len == 0) {
             return;
         }
@@ -104,10 +104,6 @@ abstract class NativeDigest extends MessageDigestSpi implements Cloneable {
 
         bytesProcessed += len;
 
-        if (b.length == 0) {
-            return;
-        }
-
         int ret = nativeCrypto.DigestUpdate(context, b, ofs, len);
 
         if (ret == -1) {
@@ -116,7 +112,7 @@ abstract class NativeDigest extends MessageDigestSpi implements Cloneable {
     }
 
     // reset this object. See JCA doc.
-    protected final void engineReset() {
+    synchronized protected final void engineReset() {
         if (bytesProcessed == 0) {
             // already reset, ignore
             return;
@@ -141,7 +137,7 @@ abstract class NativeDigest extends MessageDigestSpi implements Cloneable {
     }
 
     // return the digest in the specified array. See JCA doc.
-    protected final int engineDigest(byte[] out, int ofs, int len)
+    synchronized protected final int engineDigest(byte[] out, int ofs, int len)
             throws DigestException {
 
         if (len < digestLength) {
@@ -156,14 +152,14 @@ abstract class NativeDigest extends MessageDigestSpi implements Cloneable {
         int ret = nativeCrypto.DigestComputeAndReset(context, null, 0, 0, out, ofs, len);
 
         if (ret == -1) {
-            throw new ProviderException("Error in Native Digest");
+            throw new DigestException("Error in Native Digest");
         }
 
         bytesProcessed = 0;
         return digestLength;
     }
 
-    public Object clone() throws CloneNotSupportedException {
+    synchronized public Object clone() throws CloneNotSupportedException {
         NativeDigest copy = (NativeDigest) super.clone();
         copy.context    = nativeCrypto.DigestCreateContext(context, algIndx);
         if (copy.context == -1) {

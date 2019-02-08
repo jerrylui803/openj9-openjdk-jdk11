@@ -38,7 +38,6 @@
 typedef struct OpenSSLMDContext {
     EVP_MD_CTX *ctx;
     const EVP_MD *digestAlg;
-    //unsigned char* nativeBuffer;
 } OpenSSLMDContext;
 
 /* Structure for OpenSSL Cipher context */
@@ -160,14 +159,14 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_DigestUpdate
 
     if (message == NULL) {
         return -1;
-    } 
+    }
 
     unsigned char* messageNative = (*env)->GetPrimitiveArrayCritical(env, message, 0);
     if (messageNative == NULL) {
         return -1;
     }
 
-    if (1 != EVP_DigestUpdate(context->ctx, (messageNative + messageOffset), messageLen)){
+    if (1 != EVP_DigestUpdate(context->ctx, (messageNative + messageOffset), messageLen)) {
         printErrors();
         (*env)->ReleasePrimitiveArrayCritical(env, message, messageNative, 0);
         return -1;
@@ -190,12 +189,15 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_DigestComputeAnd
 
     OpenSSLMDContext *context = (OpenSSLMDContext*) c;
 
-    if (context == NULL)
-        return -1;
-
     unsigned int size;
     unsigned char* messageNative;
     unsigned char* digestNative;
+
+    if (context == NULL)
+        return -1;
+
+    if (context->ctx == NULL)
+        return -1;
 
     if (message != NULL) {
         messageNative = (*env)->GetPrimitiveArrayCritical(env, message, 0);
