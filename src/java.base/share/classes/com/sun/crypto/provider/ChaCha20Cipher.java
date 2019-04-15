@@ -40,6 +40,9 @@ import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import javax.crypto.*;
 import sun.security.util.DerValue;
+import jdk.crypto.jniprovider.NativeCrypto;
+
+import java.util.Arrays;
 
 /**
  * Implementation of the ChaCha20 cipher, as described in RFC 7539.
@@ -131,10 +134,23 @@ abstract class ChaCha20Cipher extends CipherSpi {
             MethodHandles.byteArrayViewVarHandle(long[].class,
                     ByteOrder.nativeOrder());
 
+
+    private static NativeCrypto nativeCrypto;
+    private long context = -1;
+
+    private final ByteArrayOutputStream aadBuf;
+
+    static {
+        nativeCrypto = NativeCrypto.getNativeCrypto();
+    }
+
     /**
      * Default constructor.
      */
     protected ChaCha20Cipher() {
+        context = nativeCrypto.CBCCreateContext();
+        aadBuf = new ByteArrayOutputStream(); // jerry: change it after finding the optimal initial size 
+
     }
 
     /**
@@ -452,6 +468,7 @@ abstract class ChaCha20Cipher extends CipherSpi {
      */
     @Override
     protected void engineUpdateAAD(byte[] src, int offset, int len) {
+        System.err.println("Jerry: engineUpdateAAD111 (Using byte array)");
         if (!initialized) {
             // We know that the cipher has not been initialized if the key
             // is still null.
@@ -465,6 +482,8 @@ abstract class ChaCha20Cipher extends CipherSpi {
             throw new IllegalStateException(
                     "Cipher is running in non-AEAD mode");
         } else {
+
+            aadBuf.write(src, offset, len);
             try {
                 aadLen = Math.addExact(aadLen, len);
                 authUpdate(src, offset, len);
@@ -487,6 +506,8 @@ abstract class ChaCha20Cipher extends CipherSpi {
      */
     @Override
     protected void engineUpdateAAD(ByteBuffer src) {
+        System.err.println("Jerry: engineUpdateAAD222 (Using ByteBuffer). HAVEN'T IMPLEMENT YET!");
+        //System.err.println("the length is " + src.remaining()); 
         if (!initialized) {
             // We know that the cipher has not been initialized if the key
             // is still null.
@@ -560,13 +581,17 @@ abstract class ChaCha20Cipher extends CipherSpi {
         // Now that we have the key and nonce, we can build the initial state
         setInitialState();
 
+        int jerry_encrypt = -1;
+
         if (mode == MODE_NONE) {
             engine = new EngineStreamOnly();
         } else if (mode == MODE_AEAD) {
             if (opmode == Cipher.ENCRYPT_MODE) {
                 engine = new EngineAEADEnc();
+                jerry_encrypt = 1;
             } else if (opmode == Cipher.DECRYPT_MODE) {
                 engine = new EngineAEADDec();
+                jerry_encrypt = 0;
             } else {
                 throw new InvalidKeyException("Not encrypt or decrypt mode");
             }
@@ -579,6 +604,15 @@ abstract class ChaCha20Cipher extends CipherSpi {
         aadDone = false;
         this.keyStrOffset = 0;
         initialized = true;
+
+        // Apr10
+        // Add JNI call below
+        // fix this: jerry_encrypt assumes always using AEAD mode
+        if (encrypt222 != -1){
+            int ret = nativeCrypto.ChaCha20Init(context, encrypt222 /* 1-encrypt 0-decrypt*/ , nonce, nonce.length, keyBytes, keyBytes.length);
+        } else { 
+            System.err.println("Jerry: not using aead more, streaming not implemented!" );
+        }
     }
 
     /**
@@ -1239,9 +1273,12 @@ abstract class ChaCha20Cipher extends CipherSpi {
             counter = 1;
         }
 
+        //Jerry: try take out synchronized !
         @Override
-        public int doUpdate(byte[] in, int inOff, int inLen, byte[] out,
+        public synchronized int doUpdate(byte[] in, int inOff, int inLen, byte[] out,
                 int outOff) throws ShortBufferException, KeyException {
+            System.err.println("encrypt doUpdate (could be called from doFinal)");
+            //System.err.println(Arrays.toString(Thread.currentThread().getStackTrace()));
             if (initialized) {
                 // If this is the first update since AAD updates, signal that
                 // we're done processing AAD info and pad the AAD to a multiple
@@ -1266,16 +1303,50 @@ abstract class ChaCha20Cipher extends CipherSpi {
                     dataLen += authUpdate(out, outOff, inLen);
                 }
 
-                return inLen;
+                //Jerry: this was here originally
+                //return inLen;
             } else {
                 throw new IllegalStateException(
                         "Must use either a different key or iv.");
             }
+            //jerry:
+            // the context should already be initilized with aead encrypt mode
+            System.err.println();
+            System.err.println();
+            System.err.println();
+
+            System.err.println("Jerry: encrypt update: java : " + Arrays.toString(out));
+
+            byte outNative[]=new byte[out.length];//declaration and instantiation  
+
+               //int ret = nativeCrypto.ChaCha20Update(long context, byte[] input, int inputOffset, int inputLen, byte[] output, int outputOffset);
+            byte aadArray[] = aadBuf.toByteArray();
+            aadBuf.reset();
+            if (in != null) {
+                int ret = nativeCrypto.ChaCha20Update(context, in, inOff, inLen, outNative, outOff, aadArray, aadArray.length);
+            } else {
+                System.err.println("Jerry AEAD Decrypt update: in is null");
+            }
+
+            System.err.println("Jerry: encrypt update: OpenSSL : " + Arrays.toString(outNative));
+
+            //System.err.println("AEAD update: Java return: " + inLen + "    and OpenSSL return: " + ret);
+
+            System.err.println();
+            System.err.println();
+            System.err.println();
+
+            return inLen;
+
+    
         }
 
         @Override
-        public int doFinal(byte[] in, int inOff, int inLen, byte[] out,
+        public synchronized int doFinal(byte[] in, int inOff, int inLen, byte[] out,
                 int outOff) throws ShortBufferException, KeyException {
+            System.err.println();
+            System.err.println();
+            System.err.println();
             // Make sure we have enough room for the remaining data (if any)
             // and the tag.
             if ((inLen + TAG_LENGTH) > (out.length - outOff)) {
@@ -1283,8 +1354,39 @@ abstract class ChaCha20Cipher extends CipherSpi {
             }
 
             doUpdate(in, inOff, inLen, out, outOff);
+
+            //jerry make a copy of in and out byte arrays
+            byte inNative[] = null;
+            if (in != null){
+                inNative =new byte[in.length];//declaration and instantiation  
+                System.arraycopy(in, 0, inNative, 0 , in.length);
+            }
+
+            byte outNative[]=new byte[out.length];//declaration and instantiation  
+            System.arraycopy(out, 0, outNative, 0 , out.length);
+
+            System.err.println("Jerry: encrypt doFinal: this is outNative before doing final (copied from java impl)" + Arrays.toString(outNative));
+
+
             authFinalizeData(null, 0, 0, out, outOff + inLen);
             aadDone = false;
+
+            //System.err.println("Jerry: encrypt doFinal:  here is the update size : " + in.length);
+
+            System.err.println("Jerry: encrypt doFinal: java : " + Arrays.toString(out));
+
+            System.err.println("Jerry: encrypt doFinal (before): OpenSSL : " + Arrays.toString(outNative));
+            if (inNative != null) {
+                int ret = nativeCrypto.ChaCha20FinalEncrypt(context, inNative, inOff, inLen, outNative, outOff + inLen , TAG_LENGTH);
+            } else {
+                System.err.println("Jerry AEAD Decrypt update: in is null");
+            }
+            System.err.println("Jerry: encrypt doFinal (after): OpenSSL : " + Arrays.toString(outNative));
+
+            //Jerry: TODO: add reset routine
+            nativeCrypto.CBCDestroyContext(context);
+            context = nativeCrypto.CBCCreateContext();
+
             return inLen + TAG_LENGTH;
         }
     }
@@ -1304,6 +1406,9 @@ abstract class ChaCha20Cipher extends CipherSpi {
         @Override
         public int doUpdate(byte[] in, int inOff, int inLen, byte[] out,
                 int outOff) {
+            System.err.println("decrypt doUpdate (could be called from doFinal)");
+            
+            byte[] jerry_in = (in!= null) ? in.clone() : null;
             if (initialized) {
                 // If this is the first update since AAD updates, signal that
                 // we're done processing AAD info and pad the AAD to a multiple
@@ -1315,6 +1420,9 @@ abstract class ChaCha20Cipher extends CipherSpi {
 
                 if (in != null) {
                     Objects.checkFromIndexSize(inOff, inLen, in.length);
+                    if (!Arrays.equals(in, jerry_in)){
+                        System.err.println("jerry: the auth changed something in AEADDec update");
+                    } 
                     cipherBuf.write(in, inOff, inLen);
                 }
             } else {
@@ -1330,9 +1438,16 @@ abstract class ChaCha20Cipher extends CipherSpi {
                 int outOff) throws ShortBufferException, AEADBadTagException,
                 KeyException {
 
+
+            byte[] jerry_out = out.clone();
             byte[] ctPlusTag;
             int ctPlusTagLen;
             if (cipherBuf.size() == 0 && inOff == 0) {
+
+                //jerry: `doUpdate` just writes it to the buffer, it doesnt 'update' anything yet
+                // the following is to feed data to authunoator for the tag only (and the buffer is already empty), so
+                // all the data is in 'in'
+
                 // No previous data has been seen before doFinal, so we do
                 // not need to hold any ciphertext in a buffer.  We can
                 // process it directly from the "in" parameter.
@@ -1340,17 +1455,26 @@ abstract class ChaCha20Cipher extends CipherSpi {
                 ctPlusTag = in;
                 ctPlusTagLen = inLen;
             } else {
+
+                // jerry: add data to the end of the buffer, then get the buffer so ctPlusTag is all data
                 doUpdate(in, inOff, inLen, out, outOff);
                 ctPlusTag = cipherBuf.toByteArray();
                 ctPlusTagLen = ctPlusTag.length;
             }
             cipherBuf.reset();
 
+            //222 jerry: ctPlusTag is in, inOff is always 0, and the size is `ctPlusTagLen`.
+            // the first (ctPlusTagLen - TAG_LENGTH) bytes is the cipher text
+            //222 jerry: now nothing is in cipherBuf, and cipher text and the tag are both in ctPlusTag
+
+            byte[] jerry_in = ctPlusTag.clone();
+
             // There must at least be a tag length's worth of ciphertext
             // data in the buffered input.
             if (ctPlusTagLen < TAG_LENGTH) {
                 throw new AEADBadTagException("Input too short - need tag");
             }
+            //cipher text length
             int ctLen = ctPlusTagLen - TAG_LENGTH;
 
             // Make sure we will have enough room for the output buffer
@@ -1362,13 +1486,45 @@ abstract class ChaCha20Cipher extends CipherSpi {
 
             // Calculate and compare the tag.  Only do the decryption
             // if and only if the tag matches.
+
+            // jerry 222 authFinalizeData mutates tag
+
+            System.err.println("Jerry: decrypt doFinal: Here is the entire input array (tag is at the end) " + Arrays.toString(ctPlusTag) );
+
             authFinalizeData(ctPlusTag, 0, ctLen, tag, 0);
+            //compare from (index) `ctLen` to `ctPlusTagLen`  (compares the tag)
             if (Arrays.compare(ctPlusTag, ctLen, ctPlusTagLen,
                     tag, 0, tag.length) != 0) {
                 throw new AEADBadTagException("Tag mismatch");
             }
             chaCha20Transform(ctPlusTag, 0, ctLen, out, outOff);
             aadDone = false;
+
+            //jerry:
+            // the context should already be initilized with aead encrypt mode
+            System.err.println();
+            System.err.println();
+
+            System.err.println("Jerry: decrypt doFinal: AEAD final : java return: " + Arrays.toString(out) );
+
+            byte outNative[]=new byte[out.length];//declaration and instantiation  
+
+            // no need update if we have all the input already
+            //int ret = nativeCrypto.ChaCha20Update(context, jerry_in, inOff, inLen, jerry_out, outOff);// no need
+            
+            byte aadArray[] = aadBuf.toByteArray();
+
+            System.err.println("Jerry: decrypt doFinal: aadBuf array " + Arrays.toString(aadArray) );
+            
+            System.err.println("Jerry: decrypt doFinal: AEAD final : OpenSSL return: (before) " + Arrays.toString(jerry_out) );
+
+            int ret2 = nativeCrypto.ChaCha20FinalDecrypt( context,jerry_in, 0 /*inOff*/ , ctPlusTagLen, jerry_out,
+                                             outOff, aadArray, aadArray.length , TAG_LENGTH);
+
+            System.err.println("Jerry: decrypt doFinal: AEAD final : OpenSSL return: (after) " + Arrays.toString(jerry_out) );
+
+            System.err.println();
+            System.err.println();
 
             return ctLen;
         }

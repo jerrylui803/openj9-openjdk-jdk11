@@ -181,4 +181,48 @@ public class NativeCrypto {
                                   byte[] m,
                                   long RSAPublicKey);
 
+    /* Native ChaCha20 interfaces */
+    //create and delete context can share with CBC create and delete for now
+//    public final native long ChaCha20CreateContext();
+//
+//    public final native int ChaCha20Context(long context);
+
+    public final native int ChaCha20Init(long context,
+                                    int mode,
+                                    byte[] iv,
+                                    int ivlen,
+                                    byte[] key,
+                                    int keylen);
+
+    public final native int ChaCha20Update(long context,
+                                       byte[] input,
+                                       int inputOffset,
+                                       int inputLen,
+                                       byte[] output,
+                                       int outputOffset,
+                                       byte[] aad,
+                                       int aadLen);
+
+
+    public final native int ChaCha20FinalEncrypt(long context,
+                                             byte[] input,
+                                             int inputOffset,
+                                             int inputLen,
+                                             byte[] output,
+                                             int outputOffset,
+                                             int tagLen);
+
+
+    public final native int ChaCha20FinalDecrypt(long context, 
+                                       byte[] input,
+                                       int inOffset,
+                                       int inputLen,
+                                       byte[] output,
+                                       int outOffset,
+                                       byte[] aad,
+                                       int aadLen,
+                                       int tagLen);
+
+        
 }
+        
