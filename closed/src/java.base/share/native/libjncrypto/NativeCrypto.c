@@ -1190,37 +1190,49 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_ChaCha20Init
     unsigned char* ivNative = NULL;
     unsigned char* keyNative = NULL;
     const EVP_CIPHER * evp_cipher1 = NULL;
-
+    int encrypt = -1;
 
     if (NULL == ctx) {
 		fprintf(stderr, "Jerry: context is NULL\n");
         return -1;
     }
-	evp_cipher1 = (*OSSL_chacha20_poly1305)();
+
+    if (mode == 0 || mode == 1) {
+        evp_cipher1 = (*OSSL_chacha20_poly1305)();
+        encrypt = mode; 
+    } else if (mode == 2){
+        //evp_cipher1 = (*OSSL_chacha20)();
+        encrypt = 1; //doesn't matter
+        evp_cipher1 = (*OSSL_chacha20_poly1305)();
+        fprintf(stderr, "Using chacha20 without poly1305\n");
+    } else { 
+        fprintf(stderr, "Jerry: ChaCha20 Init wrong mode int!\n");
+    }
 
 
- 
-    //set up the cipher for encrypt or decrypt (similar to EVP_EncryptInit_ex and EVP_DecryptInit_ex)
-    if (1 != (*OSSL_CipherInit_ex)(ctx, evp_cipher1, NULL, NULL, NULL, mode )) { /* 1 - Encrypt mode 0 Decrypt Mode*/
-		fprintf(stderr, "Jerry: fail222");
-        printErrors();
-	}
 
     // get the key and the iv (nonce)
     ivNative = (unsigned char*)((*env)->GetByteArrayElements(env, iv, 0));
     if (NULL == ivNative) {
-		fprintf(stderr, "Jerry: fail222");
+		fprintf(stderr, "Jerry: fail222_2");
         printErrors();
         //return -1;
     }
  
     keyNative = (unsigned char*)((*env)->GetByteArrayElements(env, key, 0));
     if (NULL == keyNative) {
-		fprintf(stderr, "Jerry: fail222");
+		fprintf(stderr, "Jerry: fail222_3");
         printErrors();
         //(*env)->ReleaseByteArrayElements(env, iv, (jbyte*)ivNative, JNI_ABORT);
         //return -1;
     }
+
+// FIX THIS================================================================================================================= 
+    //set up the cipher for encrypt or decrypt (similar to EVP_EncryptInit_ex and EVP_DecryptInit_ex)
+    if (1 != (*OSSL_CipherInit_ex)(ctx, evp_cipher1, NULL, NULL, NULL, encrypt )) { /* 1 - Encrypt mode 0 Decrypt Mode*/
+		fprintf(stderr, "Jerry: fail222_1");
+        printErrors();
+	}
 
 
 
@@ -1228,18 +1240,25 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_ChaCha20Init
     if (ivLen != 12){
         fprintf(stderr, "Jerry: fail: the iv len is not 12!!!\n");
     }
-    if (1 != (*OSSL_CIPHER_CTX_ctrl)(ctx, EVP_CTRL_AEAD_SET_IVLEN, ivLen, NULL)) {
-		fprintf(stderr, "Jerry: fail222");
-        printErrors();
 
-	}
+    // if using AEAD
+    if (mode != 2) {
+        if (1 != (*OSSL_CIPHER_CTX_ctrl)(ctx, EVP_CTRL_AEAD_SET_IVLEN, ivLen, NULL)) {
+            fprintf(stderr, "Jerry: fail222_4");
+            printErrors();
+
+        }
+    // if streaming
+    } else {
+        fprintf(stderr, "Using stream mode, no IV needed\n");
+    }
 
 
 
 	// Jerry: call EVP_CipherInit_ex again to set the key       (222fix mode after)
-    if (1 != (*OSSL_CipherInit_ex)(ctx, NULL, NULL, keyNative, ivNative, mode)) {
+    if (1 != (*OSSL_CipherInit_ex)(ctx, NULL, NULL, keyNative, ivNative, encrypt)) {
 		
-		fprintf(stderr, "Jerry: fail222");
+		fprintf(stderr, "Jerry: fail222_5");
         printErrors();
         //(*env)->ReleaseByteArrayElements(env, iv, (jbyte*)ivNative, JNI_ABORT);
         //(*env)->ReleaseByteArrayElements(env, key, (jbyte*)keyNative, JNI_ABORT);
@@ -1285,6 +1304,13 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_ChaCha20Update
         return -1;
     }
 
+    int j = 0;
+    //for (; j < 16;j++){
+    //    fprintf(stderr, "inputNative from C is  %hhu \n", *(inputNative + j));
+    //}
+
+
+
 	//fprintf(stderr, "Jerry: fail3\n");
     outputNative = (unsigned char*)((*env)->GetPrimitiveArrayCritical(env, output, 0));
     if (NULL == outputNative) {
@@ -1293,33 +1319,42 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_ChaCha20Update
     }
 
 
-	aadNative = (unsigned char*)((*env)->GetPrimitiveArrayCritical(env, aad, 0));
-    if (NULL == aadNative) {
-        fprintf(stderr, "Jerry: cannot get array\n");
-    //    (*env)->ReleasePrimitiveArrayCritical(env, key, keyNative, JNI_ABORT);
-    //    (*env)->ReleasePrimitiveArrayCritical(env, iv, ivNative, JNI_ABORT);
-        return -1;
+    if (aadLen > 0) {
+        fprintf(stderr, "Jerry: aad Len is not 0!\n");
+        aadNative = (unsigned char*)((*env)->GetPrimitiveArrayCritical(env, aad, 0));
+        if (NULL == aadNative) {
+            fprintf(stderr, "Jerry: cannot get array\n");
+            //    (*env)->ReleasePrimitiveArrayCritical(env, key, keyNative, JNI_ABORT);
+            //    (*env)->ReleasePrimitiveArrayCritical(env, iv, ivNative, JNI_ABORT);
+            return -1;
+        }
+
+
+
+        /* provide AAD */
+        if (1 != (*OSSL_CipherUpdate)(ctx, NULL, &outputLen, aadNative, aadLen)) {
+            printErrors();
+            //    (*OSSL_CIPHER_CTX_free)(ctx);
+            //    (*env)->ReleasePrimitiveArrayCritical(env, key, keyNative, JNI_ABORT);
+            //    (*env)->ReleasePrimitiveArrayCritical(env, iv, ivNative, JNI_ABORT);
+            //    (*env)->ReleasePrimitiveArrayCritical(env, aad, aadNative, JNI_ABORT);
+            //    (*env)->ReleasePrimitiveArrayCritical(env, output, outputNative, JNI_ABORT);
+            //    if (inLen > 0) {
+            //        (*env)->ReleasePrimitiveArrayCritical(env, input, inputNative, JNI_ABORT);
+            //    }
+            return -1;
+        }
+
+        (*env)->ReleasePrimitiveArrayCritical(env, aad, aadNative, JNI_ABORT);
+    } else { 
+        fprintf(stderr, "Jerry: aad Len is 0!\n");
     }
+        
 
 
-
-   /* provide AAD */
-    if (1 != (*OSSL_CipherUpdate)(ctx, NULL, &outputLen, aadNative, aadLen)) {
-        printErrors();
-    //    (*OSSL_CIPHER_CTX_free)(ctx);
-    //    (*env)->ReleasePrimitiveArrayCritical(env, key, keyNative, JNI_ABORT);
-    //    (*env)->ReleasePrimitiveArrayCritical(env, iv, ivNative, JNI_ABORT);
-    //    (*env)->ReleasePrimitiveArrayCritical(env, aad, aadNative, JNI_ABORT);
-    //    (*env)->ReleasePrimitiveArrayCritical(env, output, outputNative, JNI_ABORT);
-    //    if (inLen > 0) {
-    //        (*env)->ReleasePrimitiveArrayCritical(env, input, inputNative, JNI_ABORT);
-    //    }
-        return -1;
-    }
-
-
-	//fprintf(stderr, "Jerry: fail4\n");
+	//fprintf(stderr, "Jerry: fail4, here is outputNative %ld, outputOffset %ld, inputNative %ld, inputOffset %ld, inputLen %ld \n", (long) outputNative, (long) outputOffset, (long) inputNative, (long) inputOffset, (long)inputLen   );
     if (1 != (*OSSL_CipherUpdate)(ctx, (outputNative + outputOffset), &outputLen, (inputNative + inputOffset), inputLen)) {
+        fprintf(stderr, "Jerry: fail5\n");
         printErrors();
         (*env)->ReleasePrimitiveArrayCritical(env, input, inputNative, JNI_ABORT);
         (*env)->ReleasePrimitiveArrayCritical(env, output, outputNative, JNI_ABORT);
@@ -1486,9 +1521,9 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_ChaCha20FinalDec
     //}
 
 	int j = 0;
-	for (; j < 16;j++){
-		fprintf(stderr, "the aad is %hhu \n", *(aadNative) + j);
-	} 
+//	for (; j < 16;j++){
+//		fprintf(stderr, "the aad is %hhu \n", *(aadNative + j));
+//	} 
 
    /* Provide any AAD data */
     //if (aadLen > 0) {
@@ -1506,12 +1541,12 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_ChaCha20FinalDec
 	}	
 
 
-	fprintf(stderr, "\n\n\n");
+	//fprintf(stderr, "\n\n\n");
 	j = 0;
-	for (; j < 16;j++){
-		fprintf(stderr, "the tag is %hhu \n", *((inputNative + inOffset + inputLen - tagLen) + j));
-	} 
-
+//	for (; j < 16;j++){
+//		fprintf(stderr, "the tag is %hhu \n", *((inputNative + inOffset + inputLen - tagLen) + j));
+//	} 
+//
     /* Get the tag from the last tag_len bytes of the input */  // inOffset is always 0
     if (1 != (*OSSL_CIPHER_CTX_ctrl)(ctx, EVP_CTRL_AEAD_SET_TAG, tagLen, inputNative + inOffset + inputLen - tagLen)) {
         printErrors();
