@@ -1588,6 +1588,7 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_ChaCha20FinalDec
 		return 0;
 	} else {
 		fprintf(stderr, "Wrong tag!  ret is %d \n", ret);
+        return -2;
 	}
 
 
