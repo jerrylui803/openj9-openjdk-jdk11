@@ -34,24 +34,33 @@ import jdk.internal.reflect.CallerSensitive;
 
 public class NativeCrypto {
 
-    private static final boolean loaded = AccessController.doPrivileged(
-            (PrivilegedAction<Boolean>) () -> {
-            Boolean isLoaded = Boolean.FALSE;
+    //ossl_ver:
+    // -1 : library load failed
+    //  0 : openssl 1.0.2
+    //  1 : openssl 1.1.x
+    private static final int ossl_ver = AccessController.doPrivileged(
+            (PrivilegedAction<Integer>) () -> {
+            int ossl_ver = -1;
             try {
                 System.loadLibrary("jncrypto"); // check for native library
                 // load OpenSSL crypto library dynamically.
-                if (loadCrypto() == 0) {
-                    isLoaded = Boolean.TRUE;
-                }
+                ossl_ver = loadCrypto();
             } catch (UnsatisfiedLinkError usle) { 
                 // Return that isLoaded is false (default set above)
             }
             
-            return isLoaded;
-        }).booleanValue();
+            return ossl_ver;
+        });
 
+    private static final boolean loaded = (ossl_ver != -1);
+       
     public static final boolean isLoaded() {
         return loaded;
+    }
+
+    public static final int getVersion() {
+        System.err.println("jerry: OpenSSL version " + ossl_ver);
+        return ossl_ver;
     }
 
     private NativeCrypto() {

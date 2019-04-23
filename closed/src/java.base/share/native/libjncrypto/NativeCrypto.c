@@ -123,6 +123,18 @@ OSSL_DecryptFinal_t* OSSL_DecryptFinal;
 OSSL_aes_t* OSSL_chacha20;
 OSSL_aes_t* OSSL_chacha20_poly1305;
 
+#ifndef EVP_CTRL_AEAD_GET_TAG
+# define    EVP_CTRL_AEAD_GET_TAG     EVP_CTRL_GCM_GET_TAG            
+#endif
+
+#ifndef EVP_CTRL_AEAD_SET_IVLEN
+# define EVP_CTRL_AEAD_SET_IVLEN     EVP_CTRL_GCM_SET_IVLEN
+#endif
+
+#ifndef EVP_CTRL_AEAD_SET_TAG
+# define EVP_CTRL_AEAD_SET_TAG     EVP_CTRL_GCM_SET_TAG
+#endif
+
 //Define pointers for OpenSSL functions to handle RSA algorithm.
 OSSL_RSA_new_t* OSSL_RSA_new;
 OSSL_RSA_set0_key_t* OSSL_RSA_set0_key;
@@ -330,18 +342,15 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_loadCrypto
         (OSSL_BN_bin2bn == NULL) ||
         (OSSL_BN_set_negative == NULL) ||
         (OSSL_BN_free == NULL) ||
-		(OSSL_chacha20 == NULL) ||
-		(OSSL_chacha20_poly1305 == NULL) 
-
-
-
+        // Check symbols that are only available in OpenSSL 1.1.x and above
+        ((ossl_ver == 1) && ((OSSL_chacha20 == NULL) || (OSSL_chacha20_poly1305 == NULL)))
 		) {
         //fprintf(stderr, "One or more of the required symbols are missing in the crypto library\n");
         //fflush(stderr);
         unload_crypto_library(handle);
         return -1;
     } else {
-        return 0;
+        return ossl_ver;
     }
  }
 
@@ -1201,13 +1210,13 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_ChaCha20Init
         evp_cipher1 = (*OSSL_chacha20_poly1305)();
         encrypt = mode; 
     } else if (mode == 2){
-        //evp_cipher1 = (*OSSL_chacha20)();
-        encrypt = 1; //should be encrypt since this doesn't need the tag
-
+        // encrypt or decrypt doesn't matter in non-AEAD mode
+        encrypt = 1; 
         evp_cipher1 = (*OSSL_chacha20)();
-        fprintf(stderr, "Using chacha20 without poly1305\n");
+        //fprintf(stderr, "Using chacha20 without poly1305\n");
     } else { 
-        fprintf(stderr, "Jerry: ChaCha20 Init wrong mode int!\n");
+        //fprintf(stderr, "Jerry: ChaCha20 Init wrong mode int!\n");
+        return -1;
     }
 
 
@@ -1236,14 +1245,14 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_ChaCha20Init
 	}
 
 
-
-	// Jerry: set the iv size 
-    if (ivLen != 12){
-        fprintf(stderr, "Jerry: fail: the iv len is not 12!!!\n");
-    } else {
-        fprintf(stderr, "Jerry: success: the iv len is 12!!!\n");
-    }
-
+//
+//	// Jerry: set the iv size 
+//    if (ivLen != 12){
+//        fprintf(stderr, "Jerry: fail: the iv len is not 12!!!\n");
+//    } else {
+//        fprintf(stderr, "Jerry: success: the iv len is 12!!!\n");
+//    }
+//
     // if using AEAD
     if (mode != 2) {
         if (1 != (*OSSL_CIPHER_CTX_ctrl)(ctx, EVP_CTRL_AEAD_SET_IVLEN, ivLen, NULL)) {
@@ -1253,22 +1262,22 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_ChaCha20Init
         }
     // if streaming
     } else {
-        fprintf(stderr, "Using stream mode, no IV needed\n");
+        //fprintf(stderr, "Using stream mode, no IV needed\n");
     }
 
-
-        fprintf(stderr, "\n\n\n JERRY: Here is the key: ");
-    int j;
-    for (j = 0; j < 32;j++){
-        fprintf(stderr, "%hhu, ", *(keyNative + j));
-    }
-
-        fprintf(stderr, "\n\n\n JERRY: Here is the iv: ");
-    for (j = 0; j < ivLen;j++){
-        fprintf(stderr, "%hhu, ", *(ivNative + j));
-    }
-
-        fprintf(stderr, "\n\n\n");
+//
+//        fprintf(stderr, "\n\n\n JERRY: Here is the key: ");
+//    int j;
+//    for (j = 0; j < 32;j++){
+//        fprintf(stderr, "%hhu, ", *(keyNative + j));
+//    }
+//
+//        fprintf(stderr, "\n\n\n JERRY: Here is the iv: ");
+//    for (j = 0; j < ivLen;j++){
+//        fprintf(stderr, "%hhu, ", *(ivNative + j));
+//    }
+//
+//        fprintf(stderr, "\n\n\n");
 	// Jerry: call EVP_CipherInit_ex again to set the key       (222fix mode after)
     if (1 != (*OSSL_CipherInit_ex)(ctx, NULL, NULL, keyNative, ivNative, encrypt)) {
 		
@@ -1322,14 +1331,14 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_ChaCha20Update
     //for (; j < 16;j++){
     //    fprintf(stderr, "inputNative from C is  %hhu \n", *(inputNative + j));
     //}
-
-    fprintf(stderr, "\n\n\n");
-    fprintf(stderr, "Jerry: InputNative: ");
-
-    for (j = inputOffset; j < inputLen;j++){
-        fprintf(stderr, "%hhu ,", *(inputNative + j));
-    }
-    fprintf(stderr, "\n\n\n and here is input Length %d ",(int)inputLen);
+//
+//    fprintf(stderr, "\n\n\n");
+//    fprintf(stderr, "Jerry: InputNative: ");
+//
+//    for (j = inputOffset; j < inputLen;j++){
+//        fprintf(stderr, "%hhu ,", *(inputNative + j));
+//    }
+//    fprintf(stderr, "\n\n\n and here is input Length %d ",(int)inputLen);
 
 	//fprintf(stderr, "Jerry: fail3\n");
     outputNative = (unsigned char*)((*env)->GetPrimitiveArrayCritical(env, output, 0));
@@ -1340,7 +1349,7 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_ChaCha20Update
 
 
     if (aadLen > 0) {
-        fprintf(stderr, "Jerry: aad Len is not 0!\n");
+        //fprintf(stderr, "Jerry: aad Len is not 0!\n");
         aadNative = (unsigned char*)((*env)->GetPrimitiveArrayCritical(env, aad, 0));
         if (NULL == aadNative) {
             fprintf(stderr, "Jerry: cannot get array\n");
@@ -1367,7 +1376,7 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_ChaCha20Update
 
         (*env)->ReleasePrimitiveArrayCritical(env, aad, aadNative, JNI_ABORT);
     } else { 
-        fprintf(stderr, "Jerry: aad Len is 0!\n");
+        //fprintf(stderr, "Jerry: aad Len is 0!\n");
     }
         
 
@@ -1584,10 +1593,10 @@ JNIEXPORT jint JNICALL Java_jdk_crypto_jniprovider_NativeCrypto_ChaCha20FinalDec
 	if (ret > 0) {
 		/* Successful Decryption */
 		//222 change this to the actual plain text size!
-		fprintf(stderr, "Correct tag!  ret is %d \n", ret);
+		//fprintf(stderr, "Correct tag!  ret is %d \n", ret);
 		return 0;
 	} else {
-		fprintf(stderr, "Wrong tag!  ret is %d \n", ret);
+		//fprintf(stderr, "Wrong tag!  ret is %d \n", ret);
         return -2;
 	}
 
