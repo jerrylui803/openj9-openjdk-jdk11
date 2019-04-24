@@ -357,16 +357,12 @@ public final class SunJCE extends Provider {
                     put("Cipher.ARCFOUR SupportedPaddings", "NOPADDING");
                     put("Cipher.ARCFOUR SupportedKeyFormats", "RAW");
 
-                    //jerry
-                    //change this to native
                     if (useNativeChaCha20Cipher) {
-                        System.err.println("jerry: Using NativeChaCha20");
                         put("Cipher.ChaCha20",
                                 "com.sun.crypto.provider.NativeChaCha20Cipher$ChaCha20Only");
                         put("Cipher.ChaCha20-Poly1305",
                                 "com.sun.crypto.provider.NativeChaCha20Cipher$ChaCha20Poly1305");
                     } else {
-                        System.err.println("jerry: Using Java ChaCha20 impl. ----------------------FAIL-------------------------");
                         put("Cipher.ChaCha20",
                                 "com.sun.crypto.provider.ChaCha20Cipher$ChaCha20Only");
                         put("Cipher.ChaCha20-Poly1305",

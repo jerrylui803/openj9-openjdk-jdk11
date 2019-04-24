@@ -75,7 +75,6 @@ final class Poly1305 {
             throws InvalidKeyException {
         Objects.requireNonNull(newKey, "Null key provided during init");
         keyBytes = newKey.getEncoded();
-        //System.err.println("Jerry: Poly1305 engineInit" + Arrays.toString(keyBytes));
         if (keyBytes == null) {
             throw new InvalidKeyException("Key does not support encoding");
         } else if (keyBytes.length != KEY_LENGTH) {
@@ -101,7 +100,6 @@ final class Poly1305 {
      *      maintaining the same key.
      */
     void engineReset() {
-        //System.err.println("Jerry: Poly1305 reset");
         // Clear the block and reset the offset
         Arrays.fill(block, (byte)0);
         blockOffset = 0;
@@ -117,7 +115,6 @@ final class Poly1305 {
      */
     void engineUpdate(ByteBuffer buf) {
         int remaining = buf.remaining();
-        //System.err.println("Jerry: Poly1305 engineUpdate, update size is " + remaining);
         while (remaining > 0) {
             int bytesToWrite = Integer.min(remaining,
                     BLOCK_LENGTH - blockOffset);
@@ -151,8 +148,6 @@ final class Poly1305 {
      * @param len the number of bytes to process.
      */
     void engineUpdate(byte[] input, int offset, int len) {
-        //System.err.println("Jerry: Poly1305 engineUpdate222, update size is " + len + " and offset is " + offset + " and the input itself is " + Arrays.toString(input));
-        
         Objects.checkFromIndexSize(offset, len, input.length);
         if (blockOffset > 0) {
             // We have some left-over data from previous updates
@@ -187,7 +182,6 @@ final class Poly1305 {
      * @param input the byte to update the MAC with.
      */
     void engineUpdate(byte input) {
-        //System.err.println("Jerry: Poly1305 engineUpdate333, here is the input (single byte) " + input);
         assert (blockOffset < BLOCK_LENGTH);
         // we can't hold fully filled unprocessed block
         block[blockOffset++] = input;
@@ -218,7 +212,6 @@ final class Poly1305 {
         // Add in the s-half of the key to the accumulator
         a.addModPowerTwo(s, tag);
 
-        //System.err.println("Jerry: Poly1305 enginedoFinal, and the tag is " + Arrays.toString(tag));
         // Reset for the next auth
         engineReset();
         return tag;

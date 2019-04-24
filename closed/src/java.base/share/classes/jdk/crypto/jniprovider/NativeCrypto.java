@@ -59,7 +59,6 @@ public class NativeCrypto {
     }
 
     public static final int getVersion() {
-        System.err.println("jerry: OpenSSL version " + ossl_ver);
         return ossl_ver;
     }
 
@@ -101,10 +100,12 @@ public class NativeCrypto {
 
     public final native void DigestReset(long context);
 
-    /* Native CBC interfaces */
-    public final native long CBCCreateContext();
+    /* Native interfaces shared by CBC and ChaCha20*/
+    public final native long CreateContext();
 
-    public final native int CBCDestroyContext(long context);
+    public final native int DestroyContext(long context);
+
+    /* Native CBC interfaces */
 
     public final native int CBCInit(long context,
                                     int mode,
@@ -191,10 +192,6 @@ public class NativeCrypto {
                                   long RSAPublicKey);
 
     /* Native ChaCha20 interfaces */
-    //create and delete context can share with CBC create and delete for now
-//    public final native long ChaCha20CreateContext();
-//
-//    public final native int ChaCha20Context(long context);
 
     public final native int ChaCha20Init(long context,
                                     int mode,
@@ -212,15 +209,10 @@ public class NativeCrypto {
                                        byte[] aad,
                                        int aadLen);
 
-
     public final native int ChaCha20FinalEncrypt(long context,
-                                             byte[] input,
-                                             int inputOffset,
-                                             int inputLen,
                                              byte[] output,
                                              int outputOffset,
                                              int tagLen);
-
 
     public final native int ChaCha20FinalDecrypt(long context, 
                                        byte[] input,
@@ -231,7 +223,5 @@ public class NativeCrypto {
                                        byte[] aad,
                                        int aadLen,
                                        int tagLen);
-
-        
 }
         
