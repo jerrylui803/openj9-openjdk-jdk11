@@ -36,7 +36,7 @@ public class NativeCrypto {
 
     //ossl_ver:
     // -1 : library load failed
-    //  0 : openssl 1.0.2
+    //  0 : openssl 1.0.x
     //  1 : openssl 1.1.x
     private static final int ossl_ver = AccessController.doPrivileged(
             (PrivilegedAction<Integer>) () -> {
@@ -100,7 +100,7 @@ public class NativeCrypto {
 
     public final native void DigestReset(long context);
 
-    /* Native interfaces shared by CBC and ChaCha20*/
+    /* Native interfaces shared by CBC and ChaCha20 */
     public final native long CreateContext();
 
     public final native int DestroyContext(long context);
@@ -192,7 +192,6 @@ public class NativeCrypto {
                                   long RSAPublicKey);
 
     /* Native ChaCha20 interfaces */
-
     public final native int ChaCha20Init(long context,
                                     int mode,
                                     byte[] iv,
@@ -224,4 +223,3 @@ public class NativeCrypto {
                                        int aadLen,
                                        int tagLen);
 }
-        

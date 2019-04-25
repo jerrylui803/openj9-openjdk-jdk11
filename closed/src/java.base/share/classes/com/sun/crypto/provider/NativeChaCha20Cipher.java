@@ -40,9 +40,8 @@ import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import javax.crypto.*;
 import sun.security.util.DerValue;
-import jdk.crypto.jniprovider.NativeCrypto;
 
-import java.util.Arrays;
+import jdk.crypto.jniprovider.NativeCrypto;
 
 /**
  * Implementation of the ChaCha20 cipher, as described in RFC 7539.
@@ -54,9 +53,6 @@ abstract class NativeChaCha20Cipher extends CipherSpi {
     private static final int MODE_NONE = 0;
     private static final int MODE_AEAD = 1;
 
-    // The keystream block size in bytes and as integers
-    private static final int KEYSTREAM_SIZE = 64;
-    private static final int KS_SIZE_INTS = KEYSTREAM_SIZE / Integer.BYTES;
     private static final int CIPHERBUF_BASE = 1024;
 
     // The initialization state of the cipher
@@ -84,13 +80,6 @@ abstract class NativeChaCha20Cipher extends CipherSpi {
     private static final int TAG_LENGTH = 16;
     private long aadLen;
 
-    // Have a buffer of zero padding that can be read all or in part
-    // by the authenticator.
-    private static final byte[] padBuf = new byte[TAG_LENGTH];
-
-    // Create a buffer for holding the AAD and Ciphertext lengths
-    private final byte[] lenBuf = new byte[TAG_LENGTH];
-
     // The authenticator (Poly1305) when running in AEAD mode
     protected String authAlgName;
 
@@ -111,7 +100,6 @@ abstract class NativeChaCha20Cipher extends CipherSpi {
      */
     protected NativeChaCha20Cipher() {
         context = nativeCrypto.CreateContext();
-        //jerry: could change this to a commonly used buffer size to improve perf
         aadBuf = new ByteArrayOutputStream();
     }
 
@@ -547,32 +535,33 @@ abstract class NativeChaCha20Cipher extends CipherSpi {
         this.keyBytes = newKeyBytes;
         nonce = newNonce;
 
+        // ossl_mode:
+        // 0 : ChaCha20-Poly1305 decrypt
+        // 1 : ChaCha20-Poly1305 encrypt
+        // 2 : ChaCha20 streaming
         int ossl_mode = -1;
  
-        //https://mta.openssl.org/pipermail/openssl-users/2019-April.txt, search "ChaCha20 (without Poly1305) block counter"
-        //openssl_iv is only used by OpenSSL, 
+        // openssl_iv is only used by OpenSSL, here is the format:
         // Streaming mode: 16 bytes
         //                 first 4 bytes is the block counter (little-endian unsigned 32 bit int)
         //                 the last 12 bytes is the nonce
         // Poly1305 mode:  12 bytes nonce
- 
         byte[] openssl_iv = null;
 
         if (mode == MODE_NONE) {
             engine = new EngineStreamOnly();
             ossl_mode = 2;
-			byte[] counter_byte = intToLittleEndian(counter);
+            byte[] counter_byte = intToLittleEndian(counter);
 
             openssl_iv = new byte[16];
             System.arraycopy(counter_byte, 0, openssl_iv, 0, counter_byte.length /* 4 */);
-			System.arraycopy(nonce, 0, openssl_iv, 4, nonce.length /* 12 */);
-			
+            System.arraycopy(nonce, 0, openssl_iv, 4, nonce.length /* 12 */);
+
         } else if (mode == MODE_AEAD) {
             openssl_iv = nonce;
             if (opmode == Cipher.ENCRYPT_MODE) {
                 engine = new EngineAEADEnc();
                 ossl_mode = 1;
-				
             } else if (opmode == Cipher.DECRYPT_MODE) {
                 engine = new EngineAEADDec();
                 ossl_mode = 0;
@@ -585,11 +574,7 @@ abstract class NativeChaCha20Cipher extends CipherSpi {
         aadDone = false;
         initialized = true;
 
-        // ossl_mode:
-        // 0 : ChaCha20-Poly1305 decrypt 
-        // 1 : ChaCha20-Poly1305 encrypt
-        // 2 : ChaCha20 streaming
-        int ret = nativeCrypto.ChaCha20Init(context, ossl_mode/* 1-encrypt 0-decrypt*/ , openssl_iv, openssl_iv.length, keyBytes, keyBytes.length);
+        int ret = nativeCrypto.ChaCha20Init(context, ossl_mode, openssl_iv, openssl_iv.length, keyBytes, keyBytes.length);
     }
 
     /**
@@ -875,9 +860,8 @@ abstract class NativeChaCha20Cipher extends CipherSpi {
         private EngineStreamOnly () { }
 
         @Override
-        public int doUpdate(byte[] in, int inOff, int inLen, byte[] out,
+        public synchronized int doUpdate(byte[] in, int inOff, int inLen, byte[] out,
                 int outOff) throws ShortBufferException, KeyException {
-
             if (initialized) {
                try {
                     if (out != null) {
@@ -892,7 +876,6 @@ abstract class NativeChaCha20Cipher extends CipherSpi {
 
                 if (in != null) {
                     Objects.checkFromIndexSize(inOff, inLen, in.length);
-
                     int ret = nativeCrypto.ChaCha20Update(context, in, inOff, inLen, out, outOff, /*aadArray*/ null, /*aadArray.length*/ 0);
                     if (ret == -1 || ret != inLen) {
                         throw new ProviderException("Error in Native ChaCha20Cipher");
@@ -900,7 +883,7 @@ abstract class NativeChaCha20Cipher extends CipherSpi {
                 }
                 return inLen;
             } else {
-                 throw new IllegalStateException(
+                throw new IllegalStateException(
                         "Must use either a different key or iv.");
             }
         }
@@ -908,8 +891,7 @@ abstract class NativeChaCha20Cipher extends CipherSpi {
         @Override
         public int doFinal(byte[] in, int inOff, int inLen, byte[] out,
                 int outOff) throws ShortBufferException, KeyException {
-            int ret = doUpdate(in, inOff, inLen, out, outOff);
-            return ret;
+            return doUpdate(in, inOff, inLen, out, outOff);
         }
     }
 
@@ -944,7 +926,7 @@ abstract class NativeChaCha20Cipher extends CipherSpi {
                     byte aadArray[] = aadBuf.toByteArray();
                     aadBuf.reset();
                     int ret = nativeCrypto.ChaCha20Update(context, in, inOff, inLen, out, outOff, aadArray, aadArray.length);
-                    if (ret == -1 || ret != inLen){
+                    if (ret == -1){
                         throw new ProviderException("Error in Native CipherBlockChaining");
                     }
 
@@ -954,13 +936,11 @@ abstract class NativeChaCha20Cipher extends CipherSpi {
                 throw new IllegalStateException(
                         "Must use either a different key or iv.");
             }
-
         }
 
         @Override
         public synchronized int doFinal(byte[] in, int inOff, int inLen, byte[] out,
                 int outOff) throws ShortBufferException, KeyException {
-
             // Make sure we have enough room for the remaining data (if any)
             // and the tag.
             if ((inLen + TAG_LENGTH) > (out.length - outOff)) {
@@ -971,7 +951,7 @@ abstract class NativeChaCha20Cipher extends CipherSpi {
 
             if (in != null || (in == null && inLen == 0 && inOff == 0)) {
                 int ret = nativeCrypto.ChaCha20FinalEncrypt(context, out, outOff + inLen , TAG_LENGTH);
-                if (ret == -1 ){
+                if (ret == -1){
                     throw new ProviderException("Error in Native ChaCha20Cipher");
                 }
                 aadDone = false;
@@ -990,7 +970,6 @@ abstract class NativeChaCha20Cipher extends CipherSpi {
         private final byte[] tag;
 
         private EngineAEADDec() throws InvalidKeyException {
-            //initAuthenticator();
             counter = 1;
             cipherBuf = new ByteArrayOutputStream(CIPHERBUF_BASE);
             tag = new byte[TAG_LENGTH];
@@ -999,7 +978,6 @@ abstract class NativeChaCha20Cipher extends CipherSpi {
         @Override
         public int doUpdate(byte[] in, int inOff, int inLen, byte[] out,
                 int outOff) {
-
             if (initialized) {
                 // If this is the first update since AAD updates, signal that
                 // we're done processing AAD info and pad the AAD to a multiple
@@ -1049,6 +1027,7 @@ abstract class NativeChaCha20Cipher extends CipherSpi {
             if (ctPlusTagLen < TAG_LENGTH) {
                 throw new AEADBadTagException("Input too short - need tag");
             }
+
             //cipher text length
             int ctLen = ctPlusTagLen - TAG_LENGTH;
 
@@ -1097,5 +1076,4 @@ abstract class NativeChaCha20Cipher extends CipherSpi {
         }
         context = -1;
     }
-
 }

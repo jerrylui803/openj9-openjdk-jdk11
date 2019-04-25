@@ -86,9 +86,9 @@ public final class SunJCE extends Provider {
     /*
      * Check whether native crypto is enabled with property.
      * By default, the native crypto is enabled  and uses native library crypto.
-     * The property 'jdk.nativeDigest' is used to disable Native digest alone
+     * The property 'jdk.nativeChaCha20' is used to disable Native ChaCha20 alone
      * and 'jdk.nativeCrypto' is used to disable all native cryptos (Digest,
-     * CBC and GCM).
+     * CBC, GCM, and ChaCha20).
      */
 
     private static boolean useNativeChaCha20Cipher = true;
